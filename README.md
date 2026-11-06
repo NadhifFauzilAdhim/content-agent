@@ -1,14 +1,14 @@
-# FACTORY — Autonomous AI YouTube Content Factory
+# FACTORY — AI Content Agent
 
-**From idea to published video, on autopilot — with you in control of the publish button.**
+**From idea to finished video, on autopilot — with you in control of the publish button.**
 
-FACTORY is a production studio for YouTube channels. You give it a channel — who it's for, what it
-sounds like, how often it publishes — and it plans, writes, narrates, illustrates, animates,
-quality-checks and schedules complete videos. Every step is visible, editable and costed, and nothing
-reaches YouTube until you approve it.
+FACTORY is an AI content agent for channels. You give it a channel — who it's for, what it sounds
+like, how often it publishes — and it plans, writes, narrates, illustrates, animates, quality-checks
+and schedules complete videos. Every step is visible, editable and costed, and nothing is published
+until you approve it.
 
 It is built for people who run one channel carefully and for teams that run many at once: children's
-story channels, explainers, documentary-style storytelling, and vertical Shorts.
+story channels, explainers, documentary-style storytelling, and vertical short-form.
 
 ![Overview dashboard](docs/screenshots/overview.png)
 
@@ -30,8 +30,8 @@ number on screen comes from a stored row.
 Instrument Serif display type, IBM Plex Mono metadata and one functional lime accent. Dense where it
 matters, calm everywhere else.
 
-**Humans stay in the loop.** A budget guard, an approval gate for Made-for-Kids content, and a
-one-click cancel that stops a render mid-encode.
+**Humans stay in the loop.** A budget guard, an approval gate before anything leaves the studio, and
+a one-click cancel that stops a render mid-encode.
 
 ---
 
@@ -57,7 +57,8 @@ covered and respecting each channel's timezone.
    A/V sync, faststart) and the script is checked for age-safety, pacing and completion.
 8. **SEO** — title, description, tags and chapters, ready for review.
 9. **Approve** — you read, edit or reject.
-10. **Publish & learn** — upload with the right audience settings, then pull analytics back in.
+10. **Publish & learn** — hand the approved video to your publishing integration, then pull
+    performance data back in.
 
 ![Workflow detail](docs/screenshots/workflow-detail.png)
 
@@ -80,12 +81,12 @@ scene framing:
 
 | Template | Format | Look |
 | --- | --- | --- |
-| YouTube · Editorial | 16:9 | white paper, ink rules, serif lower thirds |
+| Editorial | 16:9 | white paper, ink rules, serif lower thirds |
 | Children's story | 16:9 | pastel ground, rounded vignette, sticker badges |
 | Educational | 16:9 | dark split frame with a didactic side panel |
 | Storytelling | 16:9 | cinematic letterbox, slow Ken Burns, serif overlays |
-| Short-form | 9:16 | full-bleed art with chunky subtitles |
-| YouTube Shorts | 9:16 | the editorial identity, vertical |
+| Short-form · vertical | 9:16 | full-bleed art with chunky subtitles |
+| Editorial short | 9:16 | the editorial identity, vertical |
 
 Templates are React components: adding a new one is a single file plus a registry entry, without
 touching the renderer.
@@ -255,7 +256,7 @@ Full reference: [`.env.example`](.env.example) and [docs/06-deployment.md](docs/
 apps/web                     Next.js 16 · TypeScript · Tailwind v4 · Remotion Player
 apps/api                     FastAPI · SQLAlchemy 2 · Alembic · JWT · AES-256-GCM vault
   app/agents                 ten agents, typed contracts, schema-validated outputs
-  app/adapters               OpenAI · Gemini · OpenAI/Anthropic-compatible · Cartesia · ElevenLabs · R2 · Remotion · YouTube
+  app/adapters               OpenAI · Gemini · OpenAI/Anthropic-compatible · Cartesia · ElevenLabs · R2 · Remotion · publishing
   app/services               render queue · storyboard spec · TTS · credentials · pricing
   app/workflow               pipeline · scheduler · local durable runner · Temporal adapter
 services/media-engine/remotion   compositions, templates, render CLI
@@ -277,5 +278,5 @@ This repository does not currently ship a `LICENSE` file — add one before dist
 non-profits and evaluation; larger companies need a Company Licence before production use
 (https://www.remotion.dev/docs/license). Set `REMOTION_LICENSE_KEY` in `.env` once you have one.
 
-YouTube API usage is subject to Google's quota and policy terms, and AI provider usage to each
-provider's terms and pricing.
+Publishing integrations are subject to the terms, quota and policies of the platform they connect to;
+AI provider usage is subject to each provider's terms and pricing.
