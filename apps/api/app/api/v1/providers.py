@@ -38,7 +38,7 @@ COMPATIBLE_LLM = {"openai-compatible", "anthropic-compatible"}
 SUPPORTED = {
     "llm": {"openai", "gemini", "openai-compatible", "anthropic-compatible", "mock"},
     "tts": {"cartesia", "elevenlabs", "mock"},
-    "image": {"openai", "gemini", "mock"},
+    "image": {"openai", "openai-compatible", "gemini", "mock"},
     "youtube": {"google", "mock"},
 }
 
@@ -147,6 +147,13 @@ async def create_provider(
     if payload.slug in COMPATIBLE_LLM and not (payload.base_url or "").strip():
         raise ValidationAppError(
             f"'{payload.slug}' needs a base URL (for example https://api.groq.com/openai/v1)"
+        )
+    if payload.kind == "image" and payload.slug == "openai-compatible" and not (
+        payload.base_url or ""
+    ).strip():
+        raise ValidationAppError(
+            "An OpenAI-compatible image provider needs a base URL ending in /v1 "
+            "(for example https://gateway.example.com/v1)"
         )
     is_mock = payload.slug == "mock"
     provider = AiProvider(

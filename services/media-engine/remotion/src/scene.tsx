@@ -16,6 +16,7 @@ import type React from "react";
 import {AbsoluteFill, Audio, Img, OffthreadVideo, Sequence, staticFile, useCurrentFrame} from "remotion";
 
 import {BrandMark, Captions, ProgressBar} from "./captions";
+import {GenerativeScene} from "./generative";
 import {MONO, kenBurns} from "./motion";
 import type {CaptionStyle, StoryboardScene, VideoSpec, VisualElement} from "./types";
 
@@ -42,6 +43,21 @@ export function Backdrop({
     );
   }
   if (!scene.imageSrc) {
+    // Generative mode: the scene is composed from its prompt instead of an image asset. A missing
+    // image in an asset-mode scene keeps the explicit "unavailable" notice so failures stay visible.
+    if (scene.mode === "generative" || scene.prompt) {
+      return (
+        <AbsoluteFill>
+          <GenerativeScene
+            prompt={scene.prompt ?? scene.title ?? ""}
+            title={scene.title}
+            frames={frames}
+            accentOverride={scene.accentColor ?? undefined}
+            seed={`${scene.id}:${scene.prompt ?? ""}`}
+          />
+        </AbsoluteFill>
+      );
+    }
     return (
       <AbsoluteFill style={{backgroundColor: spec.background}}>
         <div

@@ -99,7 +99,15 @@ class ProviderFactory:
             )
             return handle.provider
         if kind == "image":
-            return build_image_provider(provider.slug, key, provider.base_url)
+            extra = provider.extra_config or {}
+            return build_image_provider(
+                provider.slug,
+                key,
+                provider.base_url,
+                options={k: str(v) for k, v in extra.items() if k in
+                         ("size", "quality", "background", "image_detail", "output_format")},
+                label=provider.name,
+            )
         if kind == "youtube":
             return build_youtube_service(provider.slug)
         raise ProviderNotConfiguredError(f"No adapter for provider kind '{kind}'")
@@ -134,7 +142,10 @@ class ProviderFactory:
 
         provider: AiProvider | None = None
         if config and config.provider_id:
-            provider = await self.session.get(AiProvider, config.provider_id)
+            bound = await self.session.get(AiProvider, config.provider_id)
+            # A disabled provider must not be used; fall through to the normal selection order.
+            if bound is not None and bound.is_enabled:
+                provider = bound
         if provider is None and spec.port == "tts":
             # Voice provider precedence: global TTS configuration → first usable provider.
             global_cfg = await TTSConfigurationService(self.session).global_config(workspace_id)
@@ -156,16 +167,30 @@ class ProviderFactory:
                     AiProvider.kind == wanted,
                     AiProvider.is_enabled.is_(True),
                 )
-                .order_by(AiProvider.is_mock.asc(), AiProvider.slug.desc())
+                # Real providers first, then the operator's priority (lower wins), then a stable
+                # tiebreak so the choice is deterministic across runs.
+                .order_by(
+                    AiProvider.is_mock.asc(),
+                    AiProvider.priority.asc(),
+                    AiProvider.created_at.asc(),
+                    AiProvider.slug.asc(),
+                )
             )
             candidates = list(result.scalars())
             real = [c for c in candidates if not c.is_mock and c.credential_ciphertext]
             mocks = [c for c in candidates if c.is_mock]
             provider = real[0] if real else (mocks[0] if mocks else None)
 
-        model = (config.model if config and config.model else None) or (
-            provider and _first_model(provider)
-        ) or ""
+        # The configured model only applies to the provider it was configured for. When selection
+        # falls through to a different provider (bound one disabled, none bound), that provider's
+        # own first model wins — otherwise a gateway receives another vendor's model id and 404s.
+        bound_model = (
+            config.model
+            if config and config.model and config.provider_id and provider
+            and str(config.provider_id) == str(provider.id)
+            else None
+        )
+        model = bound_model or (provider and _first_model(provider)) or ""
         return ResolvedAgent(
             key=agent_key,
             spec=spec,

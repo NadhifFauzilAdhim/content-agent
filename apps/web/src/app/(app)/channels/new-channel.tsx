@@ -18,6 +18,7 @@ export function NewChannelForm() {
     audience: "Children 3-7",
     language: "en",
     video_format: "16:9",
+    visual_mode: "image",
     description: "",
     visual_style: "Soft gouache storybook illustration",
     made_for_kids: "true",
@@ -38,6 +39,7 @@ export function NewChannelForm() {
           audience: form.audience,
           language: form.language,
           video_format: form.video_format,
+          visual_mode: form.visual_mode,
           description: form.description || null,
           settings: {
             visual_style: form.visual_style,
@@ -91,6 +93,12 @@ export function NewChannelForm() {
           <option value="16:9">16:9 landscape</option>
           <option value="9:16">9:16 vertical</option>
           <option value="1:1">1:1 square</option>
+        </Select>
+      </Field>
+      <Field label="visuals" hint={form.visual_mode === "generative" ? "no image provider needed" : "one image per scene"}>
+        <Select value={form.visual_mode} onChange={(e) => setForm({ ...form, visual_mode: e.target.value })}>
+          <option value="image">Generated images</option>
+          <option value="generative">Remotion only (no images)</option>
         </Select>
       </Field>
       <Field label="visual style" className="md:col-span-2">

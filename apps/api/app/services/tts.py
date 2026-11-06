@@ -765,10 +765,28 @@ class TTSGenerationService:
             created_by=actor_id,
             request_key=request_key or self._idempotency_key(workspace_id, text, config),
         )
+        # Idempotency: the same request key (a resumed workflow re-synthesising a scene) must not
+        # violate the UNIQUE constraint. Reuse the existing row instead of inserting a duplicate.
+        from sqlalchemy import select as _select
+
+        existing = None
+        if generation.request_key:
+            existing = await self.session.scalar(
+                _select(TTSGeneration).where(
+                    TTSGeneration.workspace_id == workspace_id,
+                    TTSGeneration.request_key == generation.request_key,
+                )
+            )
+        if existing is not None:
+            out = generation_summary(existing)
+            out["stored"] = stored
+            out["chunks"] = generated.chunk_results
+            out["warnings"] = [*generated.warnings, "Reused the existing generation for this request"]
+            return out
+
         self.session.add(generation)
         await self.session.flush()
-        await self._record_usage(
-            generation,
+        await self._record_usage(            generation,
             workspace_id=workspace_id,
             channel_id=channel_id,
             workflow_id=workflow_id,

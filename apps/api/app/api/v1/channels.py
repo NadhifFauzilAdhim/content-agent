@@ -84,6 +84,7 @@ async def _channel_out(session: AsyncSession, channel: Channel) -> ChannelOut:
         language=channel.language,
         video_format=channel.video_format,
         accent_color=channel.accent_color,
+        visual_mode=channel.visual_mode,
         is_active=channel.is_active,
         youtube_channel_id=channel.youtube_channel_id,
         youtube_channel_title=channel.youtube_channel_title,
@@ -172,6 +173,7 @@ async def create_channel(
         language=payload.language,
         video_format=payload.video_format,
         accent_color=payload.accent_color,
+        visual_mode=payload.visual_mode,
     )
     session.add(channel)
     await session.flush()

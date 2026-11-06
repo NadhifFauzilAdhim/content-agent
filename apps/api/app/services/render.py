@@ -163,6 +163,10 @@ class RenderService:
                 job_id = await self._next_foreign_job()
                 if job_id is None:
                     continue
+            # Trace the handoff: a job that is claimed but never reaches the renderer is the
+            # difference between "queued" and "stuck".
+            log.info("render.worker_pickup job=%s source=%s", job_id,
+                     "queue" if job_id in self._queued_ids else "poll")
             try:
                 async with self._semaphore:
                     await self._execute(job_id)
@@ -260,7 +264,10 @@ class RenderService:
             missing = wanted - {s.scene.index for s in scenes}
             if missing:
                 raise ValidationAppError(f"Unknown scene indexes: {sorted(missing)}")
-        unavailable = [i.scene.index for i in scenes if i.image is None]
+        unavailable = (
+            [] if getattr(channel, "visual_mode", "image") == "generative"
+            else [i.scene.index for i in scenes if i.image is None]
+        )
         if unavailable and kind == "full":
             raise ValidationAppError(
                 f"Scene {unavailable} has no image yet; generate assets before rendering"
@@ -288,6 +295,7 @@ class RenderService:
             speed=speed,
             include_intro=True if include_intro is None else include_intro,
             include_outro=True if include_outro is None else include_outro,
+            visual_mode=getattr(channel, "visual_mode", "image"),
             width=None if kind != "scene" else None,
         )
 
@@ -338,9 +346,19 @@ class RenderService:
 
     # ------------------------------------------------------------------ execute
     async def _execute(self, job_id: uuid.UUID) -> None:
+        log.info("render.execute_begin job=%s", job_id)
+        try:
+            await self._execute_inner(job_id)
+        except BaseException as exc:
+            log.exception("render.execute_crashed job=%s type=%s", job_id, type(exc).__name__)
+            raise
+
+    async def _execute_inner(self, job_id: uuid.UUID) -> None:
         async with SessionFactory() as session:
             job = await session.get(RenderJob, job_id)
             if job is None or job.cancel_requested:
+                log.info("render.execute_skipped job=%s reason=%s", job_id,
+                         "missing" if job is None else "cancel_requested")
                 return
             # Ownership: a job put on this process's queue is already ours; anything else is claimed
             # atomically so the API and a separate worker never render the same job twice.
@@ -539,6 +557,7 @@ class RenderService:
             scenes=scenes,
             template_id=job.template_id,
             fps=job.fps,
+            visual_mode=getattr(channel, "visual_mode", "image"),
             width=job.width,
             height=job.height,
         )

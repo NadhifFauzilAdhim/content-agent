@@ -805,7 +805,12 @@ class ProductionPipeline:
                     workflow_id=workflow.id,
                     channel_id=channel.id,
                     content_id=project.id,
-                    request_key=f"tts-prod:{workflow.workflow_key}:{vr.index}",
+                    # The workflow key is stable across resumes, so the attempt number must be part
+                    # of the key; otherwise the second pass collides with the rows it already wrote
+                    # (UNIQUE constraint on tts_generations.request_key).
+                    request_key=(
+                        f"tts-prod:{workflow.workflow_key}:a{workflow.retry_count or 0}:{vr.index}"
+                    ),
                 )
             )
         await self.repo.finish_task(task, output=result.output.model_dump(), usage=result.usage,
@@ -821,6 +826,30 @@ class ProductionPipeline:
 
     async def _stage_visual(self, workflow, channel, project, scenes: list[Scene], setting) -> None:
         await self._check_cancel(workflow)
+        if getattr(channel, "visual_mode", "image") == "generative":
+            # No image provider call: Remotion composes every scene from its visual prompt, so the
+            # stage completes immediately and records why no assets exist.
+            task = await self.repo.start_task(
+                workflow, "visual_generation", self.step + 1, {"mode": "generative"}
+            )
+            self.step += 1
+            from app.ports.interfaces import Usage as _U
+
+            await self.repo.finish_task(
+                task,
+                output={"mode": "generative", "scenes": len(scenes)},
+                usage=_U(provider="remotion", model="generative", operation="visual", units=len(scenes),
+                         unit_label="scene"),
+                provider="remotion",
+                model="generative",
+            )
+            await self.repo.log(
+                workflow.id,
+                f"Visuals: generative mode — Remotion composes {len(scenes)} scenes from prompts",
+                task_id=task.id,
+            )
+            await self.session.commit()
+            return
         reqs = [
             VisualSceneRequest(scene_id=str(s.id), index=s.index, prompt=s.image_prompt,
                                negative_prompt=s.negative_prompt)
@@ -870,6 +899,28 @@ class ProductionPipeline:
         from app.models import RenderJob
         from app.services import render as render_svc
         from app.services.render import engine_status
+
+        # Resume path: a previous pass already produced this project's video. Reuse it instead of
+        # rendering again — otherwise every resume would pay the full render cost and could then
+        # fail on a stale job row from the earlier attempt.
+        existing = await self.session.scalar(
+            select(VideoRender)
+            .where(
+                VideoRender.project_id == project.id,
+                VideoRender.status == "ready",
+                VideoRender.storage_key.is_not(None),
+            )
+            .order_by(VideoRender.completed_at.desc())
+            .limit(1)
+        )
+        if existing is not None and existing.storage_key:
+            await self.repo.log(
+                workflow.id,
+                f"Render reused · {existing.resolution} · {existing.duration_s or 0:.1f}s "
+                "(already produced by an earlier attempt)",
+            )
+            await self.session.commit()
+            return existing
 
         engine = await asyncio.to_thread(engine_status)
         if not engine["ok"]:

@@ -241,6 +241,7 @@ def build_spec(
     fps: int = 30,
     speed: float = 1.0,
     captions_enabled: bool | None = None,
+    visual_mode: str = "image",
     include_intro: bool = True,
     include_outro: bool = True,
     music: dict[str, Any] | None = None,
@@ -269,6 +270,9 @@ def build_spec(
             "durationS": item.duration_s,
             "transition": _transition(s.transition, template["transition"]),
             "caption": s.narration or "",
+            # Generative scenes need no image: the visual prompt is the scene's script for Remotion.
+            "mode": visual_mode,
+            "prompt": s.image_prompt or None,
             "animation": {
                 "kenBurns": _ken_burns(s.index, "in"),
                 "entrance": ENTRANCES[(s.index - 1) % 3],

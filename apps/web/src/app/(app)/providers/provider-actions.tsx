@@ -10,7 +10,26 @@ import { buttonStyles } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/input";
 import { CredentialPanel } from "./credential-panel";
 
-const ADAPTERS: Record<string, { slug: string; label: string; base?: string; models: string; help: string }[]> = {
+type Adapter = {
+  slug: string;
+  label: string;
+  base?: string;
+  models: string;
+  help: string;
+  /** Optional request knobs this adapter accepts (image generation). */
+  options?: { key: string; label: string; hint: string; placeholder?: string }[];
+};
+
+/** Request fields an OpenAI-compatible image endpoint may accept (all optional). */
+const IMAGE_OPTIONS: Adapter["options"] = [
+  { key: "size", label: "size", hint: "auto, or WxH", placeholder: "auto" },
+  { key: "quality", label: "quality", hint: "auto · high · medium · low", placeholder: "auto" },
+  { key: "background", label: "background", hint: "auto · transparent · opaque", placeholder: "auto" },
+  { key: "image_detail", label: "image detail", hint: "high · low · auto", placeholder: "high" },
+  { key: "output_format", label: "output format", hint: "png · jpeg · webp", placeholder: "png" },
+];
+
+const ADAPTERS: Record<string, Adapter[]> = {
   llm: [
     { slug: "openai", label: "OpenAI", base: "https://api.openai.com/v1", models: "gpt-4.1-mini, gpt-4.1", help: "Platform API key (sk-…). Models receive the JSON schema for structured output." },
     { slug: "gemini", label: "Google Gemini", models: "gemini-2.5-flash", help: "Google AI Studio API key. Uses responseSchema for structured output." },
@@ -35,6 +54,13 @@ const ADAPTERS: Record<string, { slug: string; label: string; base?: string; mod
   ],
   image: [
     { slug: "openai", label: "OpenAI Images", base: "https://api.openai.com/v1", models: "gpt-image-1", help: "gpt-image-1 supports 16:9 and 9:16 sizes." },
+    {
+      slug: "openai-compatible",
+      label: "OpenAI-compatible images",
+      models: "",
+      help: "Any endpoint that serves POST /images/generations — a gateway, OpenRouter, together.ai, vLLM or your own service. Type the exact model id your endpoint expects (for example ag/gemini-3.1-flash-image); the request knobs below are sent as-is.",
+      options: IMAGE_OPTIONS,
+    },
     { slug: "gemini", label: "Gemini Images", models: "gemini-2.5-flash-image", help: "Image generation via generateContent." },
     { slug: "mock", label: "Mock (development)", models: "mock-image", help: "Pillow storyboard cards — clearly marked MOCK." },
   ],
@@ -55,17 +81,20 @@ export function AddProvider({ existing }: { existing: Provider[] }) {
   const [models, setModels] = useState("gpt-4.1-mini");
   const [baseUrl, setBaseUrl] = useState("");
   const [name, setName] = useState("");
+  const [options, setOptions] = useState<Record<string, string>>({});
   const [pending, setPending] = useState(false);
   const [discovering, setDiscovering] = useState(false);
 
   const adapter = ADAPTERS[kind].find((a) => a.slug === slug) ?? ADAPTERS[kind][0];
   const isCompatible = COMPATIBLE.has(adapter.slug);
+  const isCompatibleImage = kind === "image" && adapter.slug === "openai-compatible";
   const taken = (k: string, s: string) => existing.some((p) => p.kind === k && p.slug === s);
 
   function selectAdapter(next: string) {
     const a = ADAPTERS[kind].find((x) => x.slug === next)!;
     setSlug(a.slug);
     setModels(a.models);
+    setOptions({});
     setBaseUrl(COMPATIBLE.has(a.slug) ? "" : (a.base ?? ""));
   }
 
@@ -73,6 +102,9 @@ export function AddProvider({ existing }: { existing: Provider[] }) {
     setPending(true);
     try {
       const listed = models.split(/[,\n]/).map((m) => m.trim()).filter(Boolean);
+      const extra = Object.fromEntries(
+        Object.entries(options).filter(([, v]) => v.trim() !== "").map(([k, v]) => [k, v.trim()]),
+      );
       const res = await fetch("/api/proxy/providers", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -84,6 +116,7 @@ export function AddProvider({ existing }: { existing: Provider[] }) {
           base_url: isCompatible ? baseUrl.trim() || null : (adapter.base ?? null),
           api_key: adapter.slug === "mock" ? null : apiKey || null,
           models: listed.map((id) => ({ id })),
+          extra_config: extra,
         }),
       });
       const data = await res.json();
@@ -209,17 +242,44 @@ export function AddProvider({ existing }: { existing: Provider[] }) {
                 />
               </Field>
               <div className="md:col-span-2">
-                <Field label="models · discovered or comma separated">
-                  <Input value={models} onChange={(e) => setModels(e.target.value)} placeholder="discover below, or type model ids" />
+                <Field
+                  label={isCompatibleImage ? "model id" : "models · discovered or comma separated"}
+                  hint={isCompatibleImage ? "exactly as the endpoint expects it" : undefined}
+                >
+                  <Input
+                    value={models}
+                    onChange={(e) => setModels(e.target.value)}
+                    placeholder={
+                      isCompatibleImage
+                        ? "ag/gemini-3.1-flash-image"
+                        : "discover below, or type model ids"
+                    }
+                  />
                 </Field>
               </div>
+            </div>
+          )}
+
+          {adapter.options && (
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 md:grid-cols-5">
+              {adapter.options.map((opt) => (
+                <Field key={opt.key} label={opt.label} hint={opt.hint}>
+                  <Input
+                    value={options[opt.key] ?? ""}
+                    onChange={(e) => setOptions((prev) => ({ ...prev, [opt.key]: e.target.value }))}
+                    placeholder={opt.placeholder}
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                </Field>
+              ))}
             </div>
           )}
 
           <p className="mt-2 text-[12px] leading-relaxed text-muted-foreground">{adapter.help}</p>
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              {isCompatible && (
+              {isCompatible && !isCompatibleImage && (
                 <button type="button" disabled={discovering} onClick={discover} className={buttonStyles("outline", "sm")}>
                   {discovering ? <Loader2 className="animate-spin !size-3" /> : <ListTree className="!size-3" />} list models
                 </button>
@@ -230,10 +290,20 @@ export function AddProvider({ existing }: { existing: Provider[] }) {
             </div>
             <button
               type="button"
-              disabled={pending || (isCompatible && (!baseUrl.trim() || !models.trim()))}
+              disabled={
+                pending ||
+                (isCompatible && !baseUrl.trim()) ||
+                (isCompatibleImage && !models.trim())
+              }
               onClick={submit}
               className={buttonStyles("primary", "sm")}
-              title={isCompatible && !baseUrl.trim() ? "A base URL is required" : undefined}
+              title={
+                isCompatible && !baseUrl.trim()
+                  ? "A base URL is required"
+                  : isCompatibleImage && !models.trim()
+                    ? "A model id is required"
+                    : undefined
+              }
             >
               {pending && <Loader2 className="animate-spin !size-3" />} save provider
             </button>

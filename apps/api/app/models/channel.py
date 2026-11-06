@@ -47,6 +47,10 @@ class Channel(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
     language: Mapped[str] = mapped_column(String(12), default="en")
     video_format: Mapped[str] = mapped_column(String(8), default="16:9")
     accent_color: Mapped[str] = mapped_column(String(16), default="#D6FF45")
+    # How scenes are illustrated:
+    #   "image"       — generate one image per scene with the image provider (default)
+    #   "generative"  — no image provider: Remotion composes each scene from its visual prompt
+    visual_mode: Mapped[str] = mapped_column(String(16), default="image", server_default="image")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     # YouTube connection state (credentials live encrypted in youtube_connections)

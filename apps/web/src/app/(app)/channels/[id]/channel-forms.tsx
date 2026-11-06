@@ -44,6 +44,7 @@ export function ChannelSettingsForm({ channel }: { channel: Channel }) {
     audience: channel.audience,
     language: channel.language,
     video_format: channel.video_format,
+    visual_mode: channel.visual_mode ?? "image",
     is_active: channel.is_active,
     settings: { ...s, banned: (s.banned_topics ?? []).join(", ") } as ChannelSettings & { banned: string },
   });
@@ -62,6 +63,7 @@ export function ChannelSettingsForm({ channel }: { channel: Channel }) {
         audience: form.audience,
         language: form.language,
         video_format: form.video_format,
+        visual_mode: form.visual_mode,
         is_active: form.is_active,
         settings: { ...rest, banned_topics: banned.split(",").map((b) => b.trim()).filter(Boolean) },
       });
@@ -89,6 +91,22 @@ export function ChannelSettingsForm({ channel }: { channel: Channel }) {
             <option value="16:9">16:9</option>
             <option value="9:16">9:16</option>
             <option value="1:1">1:1</option>
+          </Select>
+        </Field>
+        <Field
+          label="visuals"
+          hint={
+            form.visual_mode === "generative"
+              ? "Remotion composes each scene from its prompt — no image provider used"
+              : "One generated image per scene, animated by Remotion"
+          }
+        >
+          <Select
+            value={form.visual_mode}
+            onChange={(e) => setForm({ ...form, visual_mode: e.target.value as "image" | "generative" })}
+          >
+            <option value="image">Generated images</option>
+            <option value="generative">Remotion only (no images)</option>
           </Select>
         </Field>
       </div>

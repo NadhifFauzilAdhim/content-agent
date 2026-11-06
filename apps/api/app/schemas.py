@@ -112,6 +112,7 @@ class ChannelCreate(BaseModel):
     language: str = "en"
     video_format: Literal["16:9", "9:16", "1:1"] = "16:9"
     accent_color: str = "#D6FF45"
+    visual_mode: Literal["image", "generative"] = "image"
     settings: ChannelSettingsIn | None = None
 
 
@@ -124,6 +125,7 @@ class ChannelUpdate(BaseModel):
     language: str | None = None
     video_format: Literal["16:9", "9:16", "1:1"] | None = None
     accent_color: str | None = None
+    visual_mode: Literal["image", "generative"] | None = None
     is_active: bool | None = None
     settings: ChannelSettingsIn | None = None
 
@@ -138,6 +140,7 @@ class ChannelOut(BaseModel):
     language: str
     video_format: str
     accent_color: str
+    visual_mode: str = "image"
     is_active: bool
     youtube_channel_id: str | None
     youtube_channel_title: str | None

@@ -51,6 +51,8 @@ export type Channel = {
   language: string;
   video_format: "16:9" | "9:16" | "1:1";
   accent_color: string;
+  /** "image" = one generated image per scene · "generative" = Remotion composes scenes from prompts. */
+  visual_mode?: "image" | "generative";
   is_active: boolean;
   youtube_channel_id: string | null;
   youtube_channel_title: string | null;

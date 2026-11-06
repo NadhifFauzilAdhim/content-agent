@@ -14,15 +14,102 @@ ASPECT_TO_SIZE = {
     "16:9": (1792, 1024),
     "9:16": (1024, 1792),
     "1:1": (1024, 1024),
+    "4:3": (1024, 768),
+    "3:4": (768, 1024),
 }
 
+#: Size strings the OpenAI Images API accepts; anything else must be sent as "auto".
+_OPENAI_SIZES = {"256x256", "512x512", "1024x1024", "1536x1024", "1024x1536", "1792x1024", "1024x1792"}
 
-class OpenAIImage:
-    name = "openai"
+#: Palette each response body can carry the image in.
+_URL_KEYS = ("url", "b64_json", "image_url")
 
-    def __init__(self, api_key: str, base_url: str = "https://api.openai.com/v1") -> None:
+
+def _aspect_from_size(width: int, height: int, fallback: str) -> str:
+    """Recover the aspect ratio from real pixels (providers may ignore the requested size)."""
+    if not width or not height:
+        return fallback
+    ratio = width / height
+    for name, (w, h) in ASPECT_TO_SIZE.items():
+        if abs(ratio - w / h) < 0.02:
+            return name
+    return f"{width}x{height}"
+
+
+def _image_dimensions(data: bytes) -> tuple[int, int]:
+    """Pixel size from the image header (PNG/GIF/JPEG/WebP) without decoding the pixels."""
+    try:
+        from PIL import Image
+
+        with Image.open(io.BytesIO(data)) as img:
+            return img.width, img.height
+    except Exception:  # noqa: BLE001 - unknown formats fall back to the requested size
+        return 0, 0
+
+
+class _ImageGenHTTP:
+    """Shared POST /images/generations client used by the OpenAI-style adapters."""
+
+    name = "images"
+
+    def __init__(self, api_key: str, base_url: str) -> None:
         self._key = api_key
         self._base = base_url.rstrip("/")
+
+    async def _fetch(self, entry: dict, timeout_s: float) -> tuple[bytes, str]:
+        """Extract image bytes from one ``data[]`` entry (base64 inline or a temporary URL)."""
+        b64 = entry.get("b64_json") or entry.get("image_base64")
+        if isinstance(b64, str) and b64:
+            if b64.startswith("data:"):  # data URI: strip the prefix
+                b64 = b64.split(",", 1)[-1]
+            return base64.b64decode(b64), "image/png"
+        url = entry.get("url") or entry.get("image_url")
+        if isinstance(url, dict):  # {"image_url": {"url": "..."}}
+            url = url.get("url")
+        if url:
+            async with default_client(timeout_s) as client:
+                img = await client.get(url)
+            raise_for_status(img, self.name)
+            mime = (img.headers.get("content-type") or "image/png").split(";")[0]
+            return img.content, mime
+        raise ProviderError(f"{self.name} response contained no image data")
+
+
+class OpenAIImage(_ImageGenHTTP):
+    """OpenAI Images API and any compatible endpoint with a custom model id.
+
+    ``base_url`` points at the API root (``.../v1``), ``model`` may be any id the endpoint serves
+    (for example ``ag/gemini-3.1-flash-image`` on a gateway). Optional request knobs are read from
+    the provider's stored ``extra_config`` so operators can tune them without a code change:
+
+    ``quality`` · ``background`` · ``image_detail`` · ``output_format`` · ``size``
+
+    Every knob defaults to ``auto`` and is only sent when set, which keeps the request valid for
+    strict OpenAI servers while still working on gateways that accept the extra fields.
+    """
+
+    name = "openai"
+
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str = "https://api.openai.com/v1",
+        *,
+        options: dict[str, str] | None = None,
+        label: str = "OpenAI Images",
+    ) -> None:
+        super().__init__(api_key, base_url)
+        self._options = {k: v for k, v in (options or {}).items() if v not in (None, "")}
+        self._label = label
+
+    def _size_for(self, aspect_ratio: str) -> str:
+        """Honour an explicit size, otherwise map the aspect ratio; unknown ratios use "auto"."""
+        configured = self._options.get("size")
+        if configured:
+            return configured
+        w, h = ASPECT_TO_SIZE.get(aspect_ratio, (0, 0))
+        candidate = f"{w}x{h}"
+        return candidate if candidate in _OPENAI_SIZES else "auto"
 
     async def generate(
         self,
@@ -36,13 +123,17 @@ class OpenAIImage:
         timeout_s: float = 180.0,
     ) -> GeneratedImage:
         started = time.perf_counter()
-        size = ASPECT_TO_SIZE.get(aspect_ratio, ASPECT_TO_SIZE["16:9"])
-        payload = {
+        size = self._size_for(aspect_ratio)
+        payload: dict[str, object] = {
             "model": model or "gpt-image-1",
             "prompt": prompt if not negative_prompt else f"{prompt}\n\nAvoid: {negative_prompt}",
-            "size": f"{size[0]}x{size[1]}",
             "n": 1,
+            "size": size,
         }
+        for key in ("quality", "background", "image_detail", "output_format"):
+            value = self._options.get(key)
+            if value:
+                payload[key] = value
         if reference_image:
             payload["image"] = "data:image/png;base64," + base64.b64encode(reference_image).decode()
 
@@ -53,23 +144,22 @@ class OpenAIImage:
                     headers={"Authorization": f"Bearer {self._key}"},
                     json=payload,
                 )
-            raise_for_status(resp, self.name)
-            body = resp.json()
-            b64 = body["data"][0].get("b64_json")
-            if b64:
-                data = base64.b64decode(b64)
-            else:  # some models return a temporary URL
-                async with default_client(timeout_s) as client:
-                    img = await client.get(body["data"][0]["url"])
-                data = img.content
+            raise_for_status(resp, self._label)
+            entries = (resp.json() or {}).get("data") or []
+            if not entries:
+                raise ProviderError(f"{self._label} returned no images")
+            data, mime = await self._fetch(entries[0], timeout_s)
+            width, height = _image_dimensions(data)
+            if not width:  # header unreadable: fall back to the requested size
+                width, height = ASPECT_TO_SIZE.get(aspect_ratio, (0, 0))
             return GeneratedImage(
                 data=data,
-                mime="image/png",
-                width=size[0],
-                height=size[1],
+                mime=mime,
+                width=width,
+                height=height,
                 usage=Usage(
                     provider=self.name,
-                    model=payload["model"],
+                    model=str(payload["model"]),
                     operation="image",
                     units=1,
                     unit_label="image",
@@ -79,13 +169,40 @@ class OpenAIImage:
 
         return await with_retries(call, attempts=2)
 
+    async def list_models(self, *, refresh: bool = False) -> list[dict[str, object]]:
+        """Models the endpoint advertises (``GET {base}/models``). Many image gateways omit images
+        from this list, so an empty result is not an error."""
+        try:
+            async with default_client(20) as client:
+                resp = await client.get(
+                    f"{self._base}/models", headers={"Authorization": f"Bearer {self._key}"}
+                )
+            if resp.status_code != 200:
+                return []
+            body = resp.json()
+            rows = body.get("data") if isinstance(body, dict) else body
+            models = [
+                {"id": str(r["id"]), "name": str(r.get("id"))}
+                for r in rows or []
+                if isinstance(r, dict) and r.get("id")
+            ]
+            return sorted(models, key=lambda m: str(m["id"]))
+        except Exception:  # noqa: BLE001 - discovery is best effort
+            return []
+
     async def health(self) -> tuple[bool, str]:
         try:
             async with default_client(15) as client:
                 resp = await client.get(
                     f"{self._base}/models", headers={"Authorization": f"Bearer {self._key}"}
                 )
-            return (resp.status_code == 200, f"HTTP {resp.status_code}")
+            if resp.status_code == 200:
+                count = len((resp.json() or {}).get("data") or [])
+                return True, f"Connected · {count} models listed"
+            if resp.status_code in (401, 403):
+                return False, f"Authentication rejected (HTTP {resp.status_code})"
+            # 404: generation may still work on endpoints without a model list.
+            return True, f"Endpoint reachable (HTTP {resp.status_code}); model list unavailable"
         except Exception as exc:  # noqa: BLE001
             return False, f"{type(exc).__name__}: {exc}"
 
@@ -247,13 +364,25 @@ class MockImage:
         return True, "Mock image provider · Pillow"
 
 
-def build_image_provider(slug: str, api_key: str | None, base_url: str | None) -> ImageProvider:
+def build_image_provider(
+    slug: str,
+    api_key: str | None,
+    base_url: str | None,
+    *,
+    options: dict[str, str] | None = None,
+    label: str | None = None,
+) -> ImageProvider:
     if slug == "mock":
         return MockImage()
     if not api_key:
         raise ProviderError(f"Image provider '{slug}' has no credential configured")
-    if slug == "openai":
-        return OpenAIImage(api_key, base_url or "https://api.openai.com/v1")
+    if slug in ("openai", "openai-compatible"):
+        return OpenAIImage(
+            api_key,
+            base_url or "https://api.openai.com/v1",
+            options=options,
+            label=label or ("OpenAI-compatible images" if slug == "openai-compatible" else "OpenAI Images"),
+        )
     if slug == "gemini":
         return GeminiImage(api_key)
     raise ProviderError(f"Unsupported image provider '{slug}'")

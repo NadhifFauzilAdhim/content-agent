@@ -41,6 +41,14 @@ export type StoryboardScene = {
   id: string;
   index: number;
   title?: string;
+  /**
+   * How the scene is drawn:
+   *  - "asset" (default) — a generated image or video clip
+   *  - "generative" — no image at all: the scene is composed procedurally from the prompt
+   */
+  mode?: "asset" | "generative";
+  /** The visual prompt the storyboard agent wrote (used by generative scenes). */
+  prompt?: string | null;
   /** Bundle-relative asset path (staticFile-style), resolved by the render job. */
   imageSrc?: string | null;
   /** Optional video clip; when present it replaces the still image. */
