@@ -21,6 +21,9 @@ def app_config() -> dict:
     engine = engine_status()
     return {
         "environment": s.environment,
+        # Environment-only view. The dashboard client lives in the credential vault and is
+        # reported by GET /providers/youtube/google/client (or /channels/youtube/status), which
+        # has a database session.
         "google_oauth_configured": bool(s.google_client_id and s.google_client_secret),
         "storage_backend": s.storage_backend,
         "workflow_backend": s.workflow_backend,

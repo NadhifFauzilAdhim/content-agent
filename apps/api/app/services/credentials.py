@@ -36,7 +36,9 @@ log = get_logger("factory.credentials")
 CACHE_TTL_SECONDS = 60.0
 
 #: Fields that may be rotated for a provider. Values are merged, so partial updates are safe.
-SECRET_FIELDS = ("api_key",)
+#: Field names a credential blob may hold. ``api_key`` is the usual one; the Google OAuth client is
+#: a pair, and storing it through the same vault gives it the same encryption and audit trail.
+SECRET_FIELDS = ("api_key", "client_id", "client_secret")
 
 
 @dataclass(slots=True)
@@ -164,7 +166,10 @@ class CredentialService:
                 existing = {}
         merged = {**existing, **cleaned}
         provider.credential_ciphertext = vault.seal(merged, aad=aad_for(provider))
-        provider.credential_fingerprint = vault.fingerprint(merged["api_key"])
+        # Fingerprint the primary secret: api_key for keys, client_id for the Google OAuth pair.
+        provider.credential_fingerprint = vault.fingerprint(
+            merged.get("api_key") or merged.get("client_id") or ""
+        )
         provider.credential_version = int(provider.credential_version or 0) + 1
         provider.credential_status = "active"
         provider.credential_updated_at = datetime.now(UTC)

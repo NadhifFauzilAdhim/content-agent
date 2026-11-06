@@ -13,7 +13,7 @@ from sqlalchemy.orm import selectinload
 
 from app.adapters.youtube import build_youtube_service
 from app.api.deps import Principal, get_principal, require_role, write_audit
-from app.core.errors import ConflictError, NotFoundError, ProviderNotConfiguredError
+from app.core.errors import ConflictError, NotFoundError
 from app.db.session import get_session
 from app.models import (
     AuditLog,
@@ -349,9 +349,10 @@ async def youtube_status(
     principal: Principal = Depends(get_principal),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    from app.core.config_view import app_config
+    from app.services.google_credentials import resolve_google_client
 
-    cfg = app_config()
+    client = await resolve_google_client(session, principal.workspace.id)
+    oauth_configured = client is not None
     connections = (
         await session.execute(
             select(YouTubeOAuthConnection)
@@ -360,7 +361,8 @@ async def youtube_status(
         )
     ).scalars()
     return {
-        "oauth_configured": cfg["google_oauth_configured"],
+        "oauth_configured": oauth_configured,
+        "oauth_source": client.source if client else None,
         "connections": [
             {
                 "channel_id": str(c.channel_id),
@@ -381,10 +383,6 @@ async def youtube_connect(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     channel = await _get_channel(session, principal, channel_id)
-    if not youtube_oauth.oauth_configured():
-        raise ProviderNotConfiguredError(
-            "Google OAuth is not configured on the server (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET)."
-        )
     state = secrets.token_urlsafe(24)
     session.add(
         AuditLog(
@@ -397,8 +395,10 @@ async def youtube_connect(
         )
     )
     await session.commit()
+    # Raises a clear configuration error when neither the dashboard nor the environment has a client.
+    authorization_url = await youtube_oauth.consent_url_for(session, f"{channel.id}:{state}")
     # state embeds the channel id so the callback can resolve it; the audit row proves it was issued
-    return {"authorization_url": youtube_oauth.consent_url(f"{channel.id}:{state}")}
+    return {"authorization_url": authorization_url}
 
 
 @router.post("/channels/{channel_id}/youtube/disconnect", status_code=204)
@@ -442,7 +442,7 @@ async def youtube_callback(code: str, state: str, session: AsyncSession = Depend
     channel = await session.get(Channel, channel_id)
     if channel is None:
         raise NotFoundError("Channel not found")
-    tokens = await youtube_oauth.exchange_code(code)
+    tokens = await youtube_oauth.exchange_code(code, session)
     service = build_youtube_service("google")
     info = await service.channel_info(tokens["access_token"])
     await youtube_oauth.store_connection(

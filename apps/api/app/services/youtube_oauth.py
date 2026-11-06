@@ -24,11 +24,42 @@ SCOPES = [
 
 
 def oauth_configured() -> bool:
+    """Synchronous best-effort check (env only).
+
+    The authoritative check is :func:`resolve_google_client`, which also reads the dashboard
+    credentials. This stays for call sites that cannot await (health summaries).
+    """
     s = get_settings()
     return bool(s.google_client_id and s.google_client_secret)
 
 
+async def consent_url_for(session: AsyncSession, state: str) -> str:
+    """Consent URL using the dashboard client when configured, otherwise the environment."""
+    from app.services.google_credentials import resolve_google_client
+
+    client = await resolve_google_client(session)
+    if client is None:
+        raise ProviderNotConfiguredError(
+            "Google OAuth is not configured. Add the client id and secret in "
+            "Providers → YouTube, or set GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET."
+        )
+    query = urllib.parse.urlencode(
+        {
+            "client_id": client.client_id,
+            "redirect_uri": get_settings().google_oauth_redirect,
+            "response_type": "code",
+            "scope": " ".join(SCOPES),
+            "access_type": "offline",
+            "prompt": "consent",
+            "include_granted_scopes": "true",
+            "state": state,
+        }
+    )
+    return f"{AUTH_URL}?{query}"
+
+
 def consent_url(state: str) -> str:
+    """Environment-only consent URL (kept for backwards compatibility)."""
     s = get_settings()
     if not oauth_configured():
         raise ProviderNotConfiguredError(
@@ -49,16 +80,27 @@ def consent_url(state: str) -> str:
     return f"{AUTH_URL}?{query}"
 
 
-async def exchange_code(code: str) -> dict:
-    s = get_settings()
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(
+async def exchange_code(code: str, session: AsyncSession | None = None) -> dict:
+    from app.services.google_credentials import resolve_google_client
+
+    client = await resolve_google_client(session) if session is not None else None
+    if client is None:
+        s = get_settings()
+        if not (s.google_client_id and s.google_client_secret):
+            raise ProviderNotConfiguredError(
+                "Google OAuth is not configured. Add it in Providers → YouTube."
+            )
+        client_id, client_secret = s.google_client_id, s.google_client_secret
+    else:
+        client_id, client_secret = client.client_id, client.client_secret
+    async with httpx.AsyncClient(timeout=30) as http:
+        resp = await http.post(
             TOKEN_URL,
             data={
                 "code": code,
-                "client_id": s.google_client_id,
-                "client_secret": s.google_client_secret,
-                "redirect_uri": s.google_oauth_redirect,
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "redirect_uri": get_settings().google_oauth_redirect,
                 "grant_type": "authorization_code",
             },
         )
@@ -78,13 +120,19 @@ async def refresh_access_token(session: AsyncSession, channel: Channel) -> str:
         return conn.access_token
     vault = get_vault()
     refresh_token = vault.decrypt(conn.refresh_ciphertext)
-    s = get_settings()
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(
+    from app.services.google_credentials import resolve_google_client
+
+    client = await resolve_google_client(session)
+    if client is None:
+        raise ProviderNotConfiguredError(
+            "Google OAuth is not configured. Add the client id and secret in Providers → YouTube."
+        )
+    async with httpx.AsyncClient(timeout=30) as http:
+        resp = await http.post(
             TOKEN_URL,
             data={
-                "client_id": s.google_client_id,
-                "client_secret": s.google_client_secret,
+                "client_id": client.client_id,
+                "client_secret": client.client_secret,
                 "refresh_token": refresh_token,
                 "grant_type": "refresh_token",
             },

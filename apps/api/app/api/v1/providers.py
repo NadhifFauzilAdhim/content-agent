@@ -397,6 +397,133 @@ async def remove_credentials(
     return await _credential_out(session, provider)
 
 
+# --------------------------------------------------------------------------- google oauth client
+
+
+class GoogleClientIn(BaseModel):
+    client_id: str = Field(min_length=10, max_length=300,
+                           description="OAuth client id, e.g. 123-abc.apps.googleusercontent.com")
+    client_secret: str = Field(default="", max_length=300,
+                               description="Leave empty to keep the stored secret while changing the id")
+
+
+class GoogleClientOut(BaseModel):
+    configured: bool
+    source: str | None  # "dashboard" | "environment" | None
+    client_id_masked: str | None
+    has_secret: bool
+    secret_updated_at: datetime | None
+    env_fallback: bool
+    redirect_uri: str
+
+
+def _mask_client_id(value: str | None) -> str | None:
+    if not value:
+        return None
+    return value if len(value) <= 24 else f"{value[:12]}...{value[-24:]}"
+
+
+async def _google_client_out(session: AsyncSession, workspace_id: uuid.UUID) -> GoogleClientOut:
+    from app.core.settings import get_settings
+    from app.services.google_credentials import resolve_google_client
+
+    settings = get_settings()
+    env_fallback = bool(settings.google_client_id and settings.google_client_secret)
+    provider = await session.scalar(
+        select(AiProvider).where(
+            AiProvider.workspace_id == workspace_id,
+            AiProvider.kind == "youtube",
+            AiProvider.slug == "google",
+        )
+    )
+    stored_id: str | None = None
+    has_secret = False
+    updated_at: datetime | None = None
+    if provider is not None and provider.credential_ciphertext:
+        service = CredentialService(session)
+        state = await service.state(provider)
+        if state.readable:
+            data = await service.get_credentials(provider)
+            stored_id = data.get("client_id")
+            has_secret = bool(data.get("client_secret"))
+            updated_at = provider.credential_updated_at
+    client = await resolve_google_client(session, workspace_id)
+    return GoogleClientOut(
+        configured=client is not None,
+        source=client.source if client else None,
+        client_id_masked=_mask_client_id(
+            stored_id or (settings.google_client_id if env_fallback else None)
+        ),
+        has_secret=has_secret,
+        secret_updated_at=updated_at,
+        env_fallback=env_fallback,
+        redirect_uri=settings.google_oauth_redirect,
+    )
+
+
+@router.get("/youtube/google/client", response_model=GoogleClientOut)
+async def get_google_client(
+    principal: Principal = Depends(require_role("editor")),
+    session: AsyncSession = Depends(get_session),
+) -> GoogleClientOut:
+    """Which Google OAuth client will be used. Never returns the secret."""
+    return await _google_client_out(session, principal.workspace.id)
+
+
+@router.put("/youtube/google/client", response_model=GoogleClientOut)
+async def set_google_client(
+    payload: GoogleClientIn,
+    request: Request,
+    principal: Principal = Depends(require_role("admin")),
+    session: AsyncSession = Depends(get_session),
+) -> GoogleClientOut:
+    """Store the Google OAuth client from the dashboard (encrypted at rest)."""
+    from app.services.google_credentials import save_google_client
+
+    if master_key_status()[0] is False:
+        raise ValidationAppError(
+            "APP_ENCRYPTION_KEY is not configured - credentials cannot be stored safely."
+        )
+    client_id = payload.client_id.strip()
+    if not client_id.endswith(".apps.googleusercontent.com"):
+        raise ValidationAppError(
+            "A Google OAuth client id ends with .apps.googleusercontent.com"
+        )
+    secret = payload.client_secret.strip()
+    if secret and len(secret) < 8:
+        raise ValidationAppError("The client secret looks too short")
+    provider = await save_google_client(session, principal.workspace.id, client_id, secret or None)
+    await write_audit(session, workspace_id=principal.workspace.id, actor_id=principal.user.id,
+                      action="youtube.client.updated", target_type="provider",
+                      target_id=str(provider.id), request=request, secret_changed=bool(secret))
+    await session.commit()
+    return await _google_client_out(session, principal.workspace.id)
+
+
+@router.delete("/youtube/google/client", status_code=204)
+async def clear_google_client(
+    request: Request,
+    principal: Principal = Depends(require_role("admin")),
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    """Remove the dashboard client; the environment fallback (if any) takes over again."""
+    provider = await session.scalar(
+        select(AiProvider).where(
+            AiProvider.workspace_id == principal.workspace.id,
+            AiProvider.kind == "youtube",
+            AiProvider.slug == "google",
+        )
+    )
+    if provider is not None and provider.credential_ciphertext:
+        await CredentialService(session).disable(
+            provider, actor_id=principal.user.id, reason="Google OAuth client removed"
+        )
+        await write_audit(session, workspace_id=principal.workspace.id, actor_id=principal.user.id,
+                          action="youtube.client.removed", target_type="provider",
+                          target_id=str(provider.id), request=request)
+        await session.commit()
+
+
 # --------------------------------------------------------------------------- tests / health
 
 
@@ -432,15 +559,20 @@ async def test_provider(
             result = await adapter.test_connection()
             ok, detail, checks = result.ok, result.detail, result.checks
         elif provider.kind == "youtube" and provider.slug == "google":
-            from app.core.settings import get_settings
+            from app.services.google_credentials import resolve_google_client
 
-            s = get_settings()
-            ok = bool(s.google_client_id and s.google_client_secret)
+            client = await resolve_google_client(session, principal.workspace.id)
+            ok = client is not None
             detail = (
-                "Google OAuth client configured · connect channels individually"
-                if ok
-                else "Set GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET to enable OAuth"
+                f"Google OAuth client configured ({client.source}) · connect channels individually"
+                if client
+                else "Add the OAuth client id and secret here, or set GOOGLE_CLIENT_ID / "
+                     "GOOGLE_CLIENT_SECRET"
             )
+            checks = [
+                {"name": "client", "ok": client is not None,
+                 "detail": client.source if client else "missing"},
+            ]
         else:
             ok, detail = await adapter.health()
     except Exception as exc:  # noqa: BLE001

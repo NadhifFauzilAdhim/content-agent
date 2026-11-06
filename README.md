@@ -72,6 +72,10 @@ the factory reads the model list straight from your provider.
 Keys are stored encrypted with AES-256-GCM, never returned by the API, and can be rotated or deleted
 without restarting anything. Every change is audited.
 
+The same applies to infrastructure secrets: the Google OAuth client used for publishing is entered in
+**Providers → YouTube → manage key**, so setting up a channel never means editing `.env` and
+restarting the server. Environment values still work as a fallback.
+
 ![Providers](docs/screenshots/providers.png)
 
 ### Build a visual identity per format

@@ -28,10 +28,14 @@ Edit `.env`:
 | `CREDENTIAL_KEY` | `docker compose run --rm api python -m app.cli gen-key` |
 | `COOKIE_SECURE` | `true` (behind HTTPS) |
 | `WEB_ORIGIN` | `https://factory.example.com` |
-| `GOOGLE_OAUTH_REDIRECT` | `https://factory.example.com/api/v1/youtube/callback` |
-| `STORAGE_BACKEND` | `r2` (+ the four `R2_*` values) |
+| `GOOGLE_OAUTH_REDIRECT` | `https://factory.example.com/api/v1/youtube/callback` || `STORAGE_BACKEND` | `r2` (+ the four `R2_*` values) |
 | `WORKFLOW_BACKEND` | `temporal` (recommended) |
 | `BOOTSTRAP_ADMIN_PASSWORD` | a strong value, then change it in Settings |
+
+`GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are **optional**: enter them once in
+*Providers → YouTube → manage key* and they are stored encrypted in the credential vault. Values in
+the environment are only used as a fallback, so an existing deployment built on `.env` keeps working
+and a dashboard value overrides it without a restart.
 
 ## 3. Start
 

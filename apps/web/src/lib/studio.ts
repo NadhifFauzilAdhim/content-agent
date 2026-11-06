@@ -77,6 +77,33 @@ export async function providerCredentials(
   }>(res);
 }
 
+export type GoogleClient = {
+  configured: boolean;
+  source: "dashboard" | "environment" | null;
+  client_id_masked: string | null;
+  has_secret: boolean;
+  secret_updated_at: string | null;
+  env_fallback: boolean;
+  redirect_uri: string;
+};
+
+/** Google OAuth client stored in the vault (dashboard) rather than in the environment. */
+export async function googleClient(
+  init: { method?: "GET" | "PUT" | "DELETE"; body?: unknown } = {},
+) {
+  const res = await fetch("/api/proxy/providers/youtube/google/client", {
+    method: init.method ?? "GET",
+    headers: init.body ? { "content-type": "application/json" } : undefined,
+    body: init.body === undefined ? undefined : JSON.stringify(init.body),
+    cache: "no-store",
+  });
+  if (init.method === "DELETE") {
+    if (!res.ok) await parse(res);
+    return null;
+  }
+  return parse<GoogleClient>(res);
+}
+
 export function previewUrl(endpoint: string | null): string | undefined {
   if (!endpoint) return undefined;
   // preview_endpoint is "/api/v1/tts/voices/<provider>/<voice>/preview"

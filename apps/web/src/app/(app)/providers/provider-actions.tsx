@@ -9,6 +9,7 @@ import type { Provider } from "@/lib/types";
 import { buttonStyles } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/input";
 import { CredentialPanel } from "./credential-panel";
+import { GoogleClientPanel } from "./google-client-panel";
 
 type Adapter = {
   slug: string;
@@ -339,11 +340,26 @@ export function CredentialToggle({
 
 export function CredentialRow({ provider, canManage }: { provider: Provider; canManage: boolean }) {
   const router = useRouter();
+  const isGoogle = provider.kind === "youtube" && provider.slug === "google";
   return (
     <tr id={`credential-${provider.id}`} className="border-b border-ink">
       <td colSpan={6} className="bg-paper px-0 py-0">
         <div className="px-3 pb-4 pt-1">
-          <CredentialPanel provider={provider} canManage={canManage} onChanged={() => router.refresh()} />
+          {isGoogle ? (
+            // Google uses an OAuth client pair (id + secret), not a single API key.
+            <div className="bg-paper">
+              <div className="px-3 pt-3">
+                <p className="max-w-[70ch] text-[12px] leading-relaxed text-muted-foreground">
+                  Create an <span className="text-ink">OAuth client (Web application)</span> in Google
+                  Cloud, paste its id and secret here, then add the redirect URI shown below to the
+                  client. Channels are connected one by one under Channels → YouTube.
+                </p>
+              </div>
+              <GoogleClientPanel canManage={canManage} />
+            </div>
+          ) : (
+            <CredentialPanel provider={provider} canManage={canManage} onChanged={() => router.refresh()} />
+          )}
         </div>
       </td>
     </tr>

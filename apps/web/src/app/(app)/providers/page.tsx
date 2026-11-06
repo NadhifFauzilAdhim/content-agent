@@ -12,11 +12,15 @@ export const metadata = { title: "Providers" };
 
 export default async function ProvidersPage() {
   const token = await sessionToken();
-  const [providers, integrations, encryption, session] = await Promise.all([
+  const [providers, integrations, encryption, session, googleClient] = await Promise.all([
     resources.providers(),
     resources.integrations(),
     api<{ ready: boolean; problem: string | null; algorithm: string }>("/providers/encryption", { token }),
     resources.session(),
+    api<{ configured: boolean; source: "dashboard" | "environment" | null; redirect_uri: string }>(
+      "/providers/youtube/google/client",
+      { token },
+    ).catch(() => ({ configured: false, source: null, redirect_uri: "" })),
   ]);
   const canManage = ["owner", "admin"].includes(session.workspace.role);
   const ready = providers.filter((p) => p.is_enabled && !p.is_mock && (p.has_credential || p.kind === "youtube"));
@@ -57,7 +61,7 @@ export default async function ProvidersPage() {
             { label: "vault", value: encryption.ready ? "aes-256-gcm" : "missing", caption: "authenticated encryption", accent: !encryption.ready },
             { label: "storage", value: integrations.storage_backend, caption: "asset backend" },
             { label: "renderer", value: integrations.video_engine?.ok ? integrations.video_engine.name : "missing", caption: "remotion engine", accent: !integrations.video_engine?.ok },
-            { label: "oauth", value: integrations.google_oauth_configured ? "configured" : "unset", caption: "google" },
+            { label: "oauth", value: googleClient.configured ? "configured" : "unset", caption: googleClient.source === "dashboard" ? "google · dashboard" : "google" },
           ]}
         />
       </div>
@@ -100,16 +104,16 @@ export default async function ProvidersPage() {
 
       <Section>
         <SectionTitle title="YouTube delivery" index="04" caption="publishing" />
-        {!integrations.google_oauth_configured && (
+        {!googleClient.configured && (
           <SetupState
             className="mb-3"
             title="Google OAuth is not configured"
-            description="Publishing and analytics require a Google Cloud OAuth client with YouTube Data API v3 and YouTube Analytics API enabled. Add the client id and secret to the API server environment, then connect each channel."
+            description="Publishing and analytics require a Google Cloud OAuth client with YouTube Data API v3 and YouTube Analytics API enabled. Add the client id and secret below, or in the API environment — either works, no restart needed."
             steps={[
               { label: "Create an OAuth client (Web application) in Google Cloud Console" },
               { label: "Enable YouTube Data API v3 and YouTube Analytics API" },
-              { label: `Add redirect URI ${process.env.NEXT_PUBLIC_GOOGLE_REDIRECT ?? "http://localhost:8000/api/v1/youtube/callback"}` },
-              { label: "Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in the API environment" },
+              { label: `Add redirect URI ${googleClient.redirect_uri || process.env.NEXT_PUBLIC_GOOGLE_REDIRECT || "http://localhost:8000/api/v1/youtube/callback"}` },
+              { label: "Open the Google row below → manage key, paste the client id and secret" },
             ]}
             action={{ label: "Open channels to connect", href: "/channels" }}
           />

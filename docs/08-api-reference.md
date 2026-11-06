@@ -92,6 +92,9 @@ Interactive docs: `/docs` (disabled in production). RBAC is noted per endpoint.
 | POST | `/providers/{kind}/{slug}/credentials` | admin | merge a new key + TTS defaults (empty values ignored) |
 | PUT | `/providers/{kind}/{slug}/credentials` | admin | rotate (key required) |
 | DELETE | `/providers/{kind}/{slug}/credentials` | admin | shred the key, keep history |
+| GET | `/providers/youtube/google/client` | editor | Google OAuth client state (masked id, source, redirect URI) |
+| PUT | `/providers/youtube/google/client` | admin | store the Google client id + secret (encrypted; blank secret keeps the stored one) |
+| DELETE | `/providers/youtube/google/client` | admin | remove the dashboard client (environment values, if any, take over) |
 
 ## Text to speech
 
