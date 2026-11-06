@@ -26,7 +26,10 @@ export default async function WorkflowDetailPage({ params }: { params: Promise<{
     throw err;
   }
 
-  const retryable = ["failed", "pending"].includes(wf.status) && wf.retry_count < 2;
+  // Retry covers both real failures and runs stranded mid-stage (the process executing them died).
+  // Terminal runs (cancelled, awaiting approval, published) need a new run instead.
+  const terminal = ["cancelled", "awaiting_approval", "published"].includes(wf.status);
+  const retryable = !terminal && wf.retry_count < 2;
   const cancellable = ACTIVE.has(wf.status) || wf.status === "awaiting_approval";
   const totalTokens = wf.tasks.reduce((s, t) => s + t.tokens_in + t.tokens_out, 0);
 

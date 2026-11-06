@@ -172,8 +172,16 @@ async def retry_workflow(
     )
     if w is None:
         raise NotFoundError("Workflow not found")
-    # Cancelled runs are terminal by design; a fresh run is started instead of resurrecting one.
-    if w.status not in ("failed", "pending"):
+    # A run can also be stranded mid-stage when the process running it stopped (deploy, crash,
+    # restart). Those are recoverable: the pipeline is idempotent per stage and resumes from the
+    # first incomplete step. Cancelled and finished runs stay terminal — start a new run instead.
+    from app.workflow.pipeline import runner as _runner
+
+    stranded = (
+        w.status not in ("failed", "pending", "cancelled", "awaiting_approval", "published")
+        and not _runner.is_running(w.id)
+    )
+    if w.status not in ("failed", "pending") and not stranded:
         raise WorkflowStateError(f"Cannot retry a workflow in status '{w.status}'")
     if w.retry_count >= w.max_retries:
         raise WorkflowStateError("Retry limit reached for this workflow")
@@ -183,7 +191,8 @@ async def retry_workflow(
     w.completed_at = None
     from app.workflow.pipeline import WorkflowRepository
 
-    await WorkflowRepository(session).log(w.id, f"Retry requested (attempt {w.retry_count})")
+    reason = "Resuming a run that stopped mid-stage" if stranded else "Retry requested"
+    await WorkflowRepository(session).log(w.id, f"{reason} (attempt {w.retry_count})")
     await session.commit()
     runner.submit(w.id)
     name, title = await _names(session, w)

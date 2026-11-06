@@ -250,7 +250,19 @@ async def bootstrap(if_empty: bool = False) -> None:
             await session.commit()
             await sync_agents()
             if workspace_id:
-                await sync_providers(workspace_id)
+                # Only seed the catalogue when the operator has no providers yet. Re-seeding on every
+                # start resurrected providers that were deliberately deleted (and re-created mocks).
+                provider_count = int(
+                    await session.scalar(
+                        select(func.count(AiProvider.id)).where(
+                            AiProvider.workspace_id == workspace_id
+                        )
+                    )
+                    or 0
+                )
+                if provider_count == 0:
+                    added = await sync_providers(workspace_id)
+                    print(f"bootstrap: seeded {added} providers")
                 await refresh_tts_providers(workspace_id)
             return
         admin = await session.scalar(select(User).where(User.email == settings.bootstrap_admin_email.lower()))
@@ -298,7 +310,8 @@ async def bootstrap(if_empty: bool = False) -> None:
                         "Simple vocabulary, 3-7 year olds."
                     ),
                     banned_topics=["violence", "weapons", "jump scares"],
-                    voice_id="mock-narrator",
+                    # No demo voice id here: a new channel inherits the workspace's TTS default.
+                    # Seeding "mock-narrator" sent an invalid voice to real providers.
                 )
             )
             for name, role, desc, prompt in [
