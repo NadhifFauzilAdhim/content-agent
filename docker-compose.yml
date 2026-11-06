@@ -1,0 +1,122 @@
+version: "3.9"
+
+name: content-factory
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: factory-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-factory}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-factory_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-factory}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - factory-pgdata:/var/lib/postgresql/data
+      - ./infrastructure/database/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-factory} -d ${POSTGRES_DB:-factory}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: factory-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - factory-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  temporal:
+    # Optional: only needed when WORKFLOW_BACKEND=temporal
+    profiles: ["temporal"]
+    image: temporalio/auto-setup:1.25.2
+    container_name: factory-temporal
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB: postgres12
+      DB_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-factory}
+      POSTGRES_PWD: ${POSTGRES_PASSWORD:-factory_dev_password}
+      POSTGRES_SEEDS: postgres
+    ports:
+      - "7233:7233"
+
+  temporal-ui:
+    profiles: ["temporal"]
+    image: temporalio/ui:2.31.2
+    container_name: factory-temporal-ui
+    depends_on: [temporal]
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+    ports:
+      - "8088:8080"
+
+  api:
+    profiles: ["full"]
+    build:
+      context: .
+      dockerfile: infrastructure/docker/api.Dockerfile
+    container_name: factory-api
+    env_file: [.env]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-factory}:${POSTGRES_PASSWORD:-factory_dev_password}@postgres:5432/${POSTGRES_DB:-factory}
+      REDIS_URL: redis://redis:6379/0
+      WEB_ORIGIN: http://localhost:3000
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    ports:
+      - "8000:8000"
+    volumes:
+      - factory-storage:/app/storage
+    command: >
+      sh -c "alembic upgrade head &&
+             python -m app.cli bootstrap --if-empty &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+  worker:
+    profiles: ["full"]
+    build:
+      context: .
+      dockerfile: infrastructure/docker/api.Dockerfile
+    container_name: factory-worker
+    env_file: [.env]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-factory}:${POSTGRES_PASSWORD:-factory_dev_password}@postgres:5432/${POSTGRES_DB:-factory}
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      api: { condition: service_started }
+    volumes:
+      - factory-storage:/app/storage
+    command: ["python", "-m", "app.worker"]
+
+  web:
+    profiles: ["full"]
+    build:
+      context: .
+      dockerfile: infrastructure/docker/web.Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+    container_name: factory-web
+    environment:
+      API_INTERNAL_URL: http://api:8000
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    depends_on: [api]
+    ports:
+      - "3000:3000"
+
+volumes:
+  factory-pgdata:
+  factory-redis:
+  factory-storage:

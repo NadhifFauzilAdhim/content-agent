@@ -1,0 +1,28 @@
+{
+  "name": "factory-remotion",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Factory video engine — Remotion compositions, templates and scene components",
+  "scripts": {
+    "studio": "remotion studio src/index.tsx",
+    "compositions": "remotion compositions src/index.tsx",
+    "render": "remotion render src/index.tsx youtube-editorial out/video.mp4",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@remotion/bundler": "4.0.541",
+    "@remotion/cli": "4.0.541",
+    "@remotion/media": "4.0.541",
+    "@remotion/player": "4.0.541",
+    "@remotion/renderer": "4.0.541",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "remotion": "4.0.541"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.6.0"
+  }
+}
+

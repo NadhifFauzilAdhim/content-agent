@@ -1,0 +1,44 @@
+{
+  "renderId": "cli-test",
+  "compositionId": "youtube-editorial",
+  "outputPath": "D:\\PROJECT\\content-agent\\services\\media-engine\\tmp-render.mp4",
+  "cancelFile": "D:\\PROJECT\\content-agent\\services\\media-engine\\cancel.flag",
+  "concurrency": 4,
+  "assets": [],
+  "inputProps": {
+    "spec": {
+      "version": 1,
+      "title": "Direct",
+      "brand": "FACTORY",
+      "templateId": "youtube-editorial",
+      "width": 1280,
+      "height": 720,
+      "fps": 30,
+      "accent": "#D6FF45",
+      "background": "#FFFFFF",
+      "ink": "#111111",
+      "captions": {
+        "enabled": true,
+        "mode": "lower-third"
+      },
+      "defaultTransition": "fade",
+      "transitionDurationS": 0.6,
+      "intro": {
+        "enabled": false,
+        "durationS": 0,
+        "title": "Direct"
+      },
+      "outro": {
+        "enabled": false,
+        "durationS": 0,
+        "headline": ""
+      },
+      "scenes": [],
+      "music": {
+        "url": null,
+        "volume": 0.1,
+        "duckUnderNarration": true
+      }
+    }
+  }
+}

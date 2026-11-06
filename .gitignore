@@ -1,0 +1,48 @@
+# deps
+node_modules/
+.pnpm-store/
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# builds
+.next/
+out/
+dist/
+build/
+.turbo/
+
+# env & secrets
+.env
+.env.*
+!.env.example
+*.pem
+
+# runtime data
+storage/
+apps/storage/
+var/
+logs/
+apps/.shots/
+apps/.tmp/
+*.db
+*.sqlite
+*.sqlite3
+*.mp4
+*.wav
+*.mp3
+.coverage
+coverage.xml
+htmlcov/
+
+# editor / os
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log
