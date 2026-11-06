@@ -188,7 +188,7 @@ class RemotionRenderer:
                 "stills": stills,
                 "stillsOnly": spec.stills_only,
                 "assets": assets,
-                "inputProps": spec.spec,
+                "inputProps": {"spec": spec.spec},
             }
             job_path.write_text(json.dumps(payload), encoding="utf-8")
             artifact, meta = await self._run_cli(spec, job_path, cancel_file, out, on_progress)
