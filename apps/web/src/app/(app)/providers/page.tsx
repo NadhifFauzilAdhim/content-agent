@@ -56,7 +56,7 @@ export default async function ProvidersPage() {
             { label: "unhealthy", value: String(errors.length), caption: "check required", accent: errors.length > 0 },
             { label: "vault", value: encryption.ready ? "aes-256-gcm" : "missing", caption: "authenticated encryption", accent: !encryption.ready },
             { label: "storage", value: integrations.storage_backend, caption: "asset backend" },
-            { label: "renderer", value: integrations.ffmpeg_available ? "ffmpeg" : "missing", caption: "video engine" },
+            { label: "renderer", value: integrations.video_engine?.ok ? integrations.video_engine.name : "missing", caption: "remotion engine", accent: !integrations.video_engine?.ok },
             { label: "oauth", value: integrations.google_oauth_configured ? "configured" : "unset", caption: "google" },
           ]}
         />

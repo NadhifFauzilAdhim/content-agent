@@ -84,8 +84,15 @@ class RenderService:
         self._ensure_workers(max(1, get_settings().render_concurrency))
 
     async def reconcile_schema(self) -> None:
-        """Create/add anything the models declare that the database is missing (e.g. a new column
-        after a code update on a local SQLite install)."""
+        """Reconcile the schema on SQLite only.
+
+        SQLite installs are self-creating (``create_all`` plus the additive reconciler), so a code
+        update picks up new columns without a migration step. PostgreSQL is owned by Alembic — the
+        API runs ``alembic upgrade head`` before it starts, and two processes racing ``create_all``
+        against a half-migrated database is how you get duplicate-relation errors.
+        """
+        if not get_settings().database_url.startswith("sqlite"):
+            return
         from app.db.session import init_models
 
         try:

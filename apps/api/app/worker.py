@@ -56,7 +56,7 @@ async def render_only() -> None:
 
     settings = get_settings()
     if settings.database_url.startswith("sqlite"):
-        await init_models()
+        await init_models()  # development convenience; production uses `alembic upgrade head`
     await render_service().reconcile_schema()
     stop = asyncio.Event()
     _install_signal_handlers(stop)
@@ -85,7 +85,18 @@ async def local_loop() -> None:
         await render_service().start()
         log.info("render queue started in worker")
 
-    log.info("local worker started · poll %ss", settings.scheduler_poll_seconds)
+    db = settings.database_url.rsplit("/", 1)[-1].split("?")[0]
+    log.info("local worker started · poll %ss · scheduler %s · db %s",
+             settings.scheduler_poll_seconds, settings.scheduler_enabled, db)
+    # Readiness marker for container healthchecks (the worker exposes no HTTP port).
+    from pathlib import Path
+
+    ready = Path("/tmp/factory-worker-ready")
+    try:
+        await asyncio.to_thread(ready.parent.mkdir, parents=True, exist_ok=True)
+        await asyncio.to_thread(ready.touch)
+    except OSError:
+        log.debug("worker readiness marker unavailable on this platform")
     while not stop.is_set():
         try:
             if settings.scheduler_enabled:

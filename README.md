@@ -189,13 +189,29 @@ Change that password in **Settings → Security** before anything else.
 
 ### Docker
 
+The images are self-contained: Node, the Remotion packages, headless Chromium and its libraries are
+all baked in, so the host only needs Docker.
+
 ```bash
-cp .env.example .env      # fill in secrets
-docker compose up -d      # postgres, redis, temporal (optional), api, worker, web
+cp .env.example .env                 # set JWT_SECRET and APP_ENCRYPTION_KEY at minimum
+python -m app.cli gen-key            # from apps/api (or any shell with the API deps)
+docker compose --profile full up -d --build
 ```
 
-Services expose API `:8000`, web `:3000`, Temporal `:7233`, Temporal UI `:8088`.
+| Service | Port | Role |
+| --- | --- | --- |
+| `web` | 3000 | dashboard |
+| `api` | 8000 | REST API, runs workflows and the render queue |
+| `worker` | — | scheduler and durable workflow runner |
+| `postgres` · `redis` | 5432 · 6379 | database and cache |
+| `temporal` · `temporal-ui` | 7233 · 8088 | optional, only with `--profile temporal` |
 
+The API applies migrations and seeds the workspace on start. Uploaded assets and rendered videos
+live in the `factory-storage` volume. The first build takes a while (it downloads Chromium); later
+builds only redo the layers that changed.
+
+The docker-compose file enables only `postgres` and `redis` by default, so `--profile full` is
+required for the application services.
 ### Dedicated render worker
 
 Rendering is CPU-heavy. By default it runs inside the API so a single process is enough. To move it

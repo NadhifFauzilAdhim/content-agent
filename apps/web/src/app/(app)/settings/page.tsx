@@ -42,7 +42,8 @@ export default async function SettingsPage() {
             { label: "members", value: String(members.length), caption: "with access" },
             { label: "environment", value: integrations.environment, caption: "api runtime" },
             { label: "storage", value: integrations.storage_backend, caption: "asset backend" },
-            { label: "ffmpeg", value: integrations.ffmpeg_available ? "ready" : "missing", caption: "renderer" },
+            { label: "engine", value: integrations.video_engine?.ok ? `remotion ${integrations.video_engine.version ?? ""}`.trim() : "missing", caption: "video renderer", accent: !integrations.video_engine?.ok },
+            { label: "ffprobe", value: integrations.ffmpeg_available ? "ready" : "missing", caption: "output inspection" },
             { label: "scheduler", value: integrations.scheduler_enabled ? "on" : "off", caption: `${status.scheduler.active_schedules} schedules` },
           ]}
         />

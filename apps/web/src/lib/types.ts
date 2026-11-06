@@ -515,6 +515,13 @@ export type IntegrationConfig = {
   storage_backend: string;
   workflow_backend: string;
   ffmpeg_available: boolean;
+  video_engine: {
+    name: string;
+    ok: boolean;
+    version: string | null;
+    node: string | null;
+    detail: string;
+  };
   credential_vault_ready: boolean;
   scheduler_enabled: boolean;
 };

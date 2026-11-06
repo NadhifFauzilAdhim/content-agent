@@ -1,0 +1,37 @@
+# Keep the build context small and free of local state. Only source, manifests and lockfiles are
+# needed; dependencies are installed inside the images.
+.git
+.gitignore
+
+# javascript
+**/node_modules
+**/.next
+**/out
+**/dist
+
+# python
+**/.venv
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+**/*.egg-info
+
+# local secrets and runtime data
+.env
+.env.*
+!.env.example
+**/storage
+**/*.db
+**/*.sqlite
+**/logs
+apps/.shots
+apps/.tmp
+
+# docs and screenshots are not needed to build images
+docs
+**/*.md
+
+.DS_Store
+Thumbs.db
