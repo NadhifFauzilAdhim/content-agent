@@ -20,7 +20,7 @@ from app.adapters.storage import get_storage
 from app.adapters.youtube import build_youtube_service
 from app.agents.base import AgentContext
 from app.agents.registry import REGISTRY
-from app.core.crypto import CredentialError, get_vault
+from app.core.crypto import CredentialError
 from app.core.errors import NotFoundError, ProviderNotConfiguredError
 from app.models import Agent, AgentConfiguration, AiProvider, Channel, ChannelSetting
 from app.services.credentials import CredentialService
@@ -57,21 +57,20 @@ class ResolvedAgent:
 class ProviderFactory:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
-        self._vault = None
         self.credentials = CredentialService(session)
 
     async def _secret(self, provider: AiProvider) -> str | None:
+        """Decrypt a provider's stored key.
+
+        Always goes through ``CredentialService``: credentials are sealed with an AAD that binds them
+        to their provider row, so opening them requires that same scope. Decrypting with the vault's
+        bare ``decrypt()`` (AAD "default") fails authentication for every provider — that was the
+        cause of "The stored credential could not be authenticated" on LLM/image tests.
+        """
         if provider.is_mock or not provider.credential_ciphertext:
             return None
-        if provider.kind == "tts":
-            try:
-                return await self.credentials.get_secret(provider)
-            except CredentialError as exc:
-                raise ProviderNotConfiguredError(str(exc)) from exc
-        if self._vault is None:
-            self._vault = get_vault()
         try:
-            return self._vault.decrypt(provider.credential_ciphertext)
+            return await self.credentials.get_secret(provider)
         except CredentialError as exc:
             raise ProviderNotConfiguredError(str(exc)) from exc
 

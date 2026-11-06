@@ -209,6 +209,52 @@ def test_provider_can_be_deleted_even_with_history(client, auth):
     assert any(row["action"] == "provider.deleted" for row in audit)
 
 
+def test_llm_provider_reads_its_stored_credential(wire):
+    """A stored key must be readable through the same scope it was sealed with.
+
+    Regression: the LLM/image path decrypted with the vault's bare ``decrypt()`` (AAD "default")
+    while credentials are sealed with AAD ``provider:<workspace>:<provider>``, so every connection
+    test failed with "The stored credential could not be authenticated" even though the key was
+    correct.
+    """
+    from types import SimpleNamespace
+
+    from app.adapters import http as http_mod
+    from app.container import ProviderFactory
+    from app.core.crypto import get_vault
+    from app.services.credentials import aad_for
+
+    provider = SimpleNamespace(
+        id="pid-1",
+        workspace_id="ws-1",
+        kind="llm",
+        slug="openai-compatible",
+        name="Self",
+        base_url="https://llm.example.com/v1",
+        models=[{"id": "m"}],
+        is_mock=False,
+        extra_config={},
+        credential_version=1,
+    )
+    provider.credential_ciphertext = get_vault().seal(
+        {"api_key": "sk-from-vault-123456"}, aad=aad_for(provider)
+    )
+    # Silence the credential cache so this is a pure decrypt test.
+    from app.services import credentials as creds
+
+    creds._CACHE.clear()
+
+    class _Session:
+        async def flush(self):
+            return None
+
+    wire(lambda request, body: http_mod.httpx.Response(200, json={"data": []}))
+    factory = ProviderFactory(_Session())
+    import asyncio
+
+    assert asyncio.run(factory._secret(provider)) == "sk-from-vault-123456"
+
+
 def test_compatible_provider_requires_a_base_url(client, auth):
     resp = client.post("/api/v1/providers", json={
         "kind": "llm", "slug": "openai-compatible", "name": "No URL", "vendor": "Self",
